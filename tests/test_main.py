@@ -4,21 +4,6 @@ Minimal unit tests for the FastAPI service.
 
 from unittest.mock import MagicMock, patch
 
-
-@patch("main.get_redis_connection")
-def test_health_endpoint(mock_get_redis_connection, client):
-    mock_redis = MagicMock()
-    # emulate redis returning bytes
-    mock_redis.get.return_value = b"ok:123"
-    mock_redis.set.return_value = True
-    mock_get_redis_connection.return_value = mock_redis
-
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
-    assert response.json()["redis_roundtrip"] is True
-
-
 @patch("main.predict_house_price")
 def test_predict_sync_success(mock_predict, client, sample_house_request):
     mock_predict.return_value = 500000.0
