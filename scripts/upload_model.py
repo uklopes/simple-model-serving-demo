@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import logging
+import os
 import requests
 import time
 import sys
 import pathlib
 
-api_url = "http://localhost:8000"
+#
+# Default API URL for when this script runs *inside the same container* as uvicorn.
+# On Railway, the app usually listens on $PORT (often 8080), not 8000.
+#
+_port = os.getenv("PORT", "8000")
+api_url = os.getenv("API_URL", f"http://127.0.0.1:{_port}")
 
 # Logging (stdout-friendly for Docker/Railway)
 logging.basicConfig(
