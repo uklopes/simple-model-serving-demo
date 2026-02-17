@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import logging
 from rq import Queue
 import os
+import time
 
 from utils import (
     create_redis_connection, 
@@ -107,7 +108,25 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    # Verify Redis connectivity with a simple round-trip.
+    # This is intentionally minimal: write a short-lived key and read it back.
+    redis_conn = get_redis_connection()
+    if redis_conn is None:
+        raise HTTPException(status_code=503, detail="Redis not available")
+
+    key = "healthcheck:prediction-api"
+    value = f"ok:{time.time()}"
+    try:
+        redis_conn.set(key, value.encode("utf-8"), ex=30)
+        raw = redis_conn.get(key)
+        readback = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        if readback != value:
+            raise RuntimeError("Redis round-trip mismatch")
+    except Exception as e:
+        logger.error(f"Redis healthcheck failed: {e}")
+        raise HTTPException(status_code=503, detail="Redis healthcheck failed")
+
+    return {"status": "healthy", "redis_roundtrip": True}
 
 
 @app.get("/ui", response_class=HTMLResponse)
