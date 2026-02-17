@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Prediction API", version="1.0.0")
  
 
+# Set up templates directory (for /ui)
+templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+if os.path.exists(templates_dir):
+    templates = Jinja2Templates(directory=templates_dir)
+else:
+    templates = None
+
 # Redis connection for RQ (lazy initialization)
 # Only connects when actually needed, not at import time
 redis_conn = None
@@ -88,7 +95,8 @@ class JobResponse(BaseModel):
 class JobStatusResponse(BaseModel):
     job_id: str
     status: str
-    result: Optional[float] = None
+    # Keep this flexible: older clients may expect a float, UI expects an object with `prediction`
+    result: Optional[Any] = None
     error: Optional[str] = None
 
 
@@ -100,6 +108,24 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/ui", response_class=HTMLResponse)
+async def serve_ui(request: Request):
+    """Serve the prediction UI page."""
+    if templates:
+        return templates.TemplateResponse("index.html", {"request": request})
+
+    # Fallback: return a simple message if templates directory doesn't exist
+    return HTMLResponse(content="""
+    <html>
+        <head><title>UI Not Available</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+            <h1>UI Not Available</h1>
+            <p>Please ensure the 'templates' directory exists with index.html</p>
+        </body>
+    </html>
+    """)
 
 @app.post("/predict", response_model=JobResponse)
 async def predict(request: PredictionRequest):
@@ -153,10 +179,19 @@ async def get_job_status(job_id: str):
         job = Job.fetch(job_id, connection=conn)
         status = job.get_status()
         
+        result = None
+        if status == "finished":
+            # UI expects an object with `prediction`; other consumers may handle float/dict.
+            jr = job.result
+            if isinstance(jr, dict):
+                result = jr
+            else:
+                result = {"prediction": jr}
+
         return JobStatusResponse(
             job_id=job_id,
             status=status,
-            result=job.result if status == "finished" else None,
+            result=result,
             error=str(job.exc_info) if status == "failed" else None
         )
     except Exception as e:
